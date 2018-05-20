@@ -1,2 +1,2 @@
-# kami
-Keras Automated Model Interface
+# Kirin
+Keras Networks
