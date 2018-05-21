@@ -1,6 +1,8 @@
+import numpy as np
 import keras.layers as KL
 from keras.models import Model
 from fnmatch import fnmatch
+from .vae import gauss_sample
 
 
 def conv_layer_like(tensor):
@@ -23,6 +25,9 @@ def conv_block(input,
 
     if isinstance(filters, int):
         filters = (filters,) * convs_per_block
+
+    if isinstance(kernel_size, int):
+        kernel_size = (kernel_size,) * ndims
 
     tensor = input
     for i, f in enumerate(filters, start=1):
@@ -65,7 +70,7 @@ def _clean_inputs(input_shape, pool_size, kernel_size, filters, num_blocks, filt
 
 
 def conv_encoder(input_shape,
-                 enc_filters,
+                 filters,
                  num_blocks=None,
                  filter_mult=2,
                  convs_per_block=2,
@@ -81,18 +86,18 @@ def conv_encoder(input_shape,
     if prefix is None:
         prefix = "conv_enc"
 
-    ndims, pool_size, kernel_size, enc_filters = _clean_inputs(input_shape, pool_size,
-                                                               kernel_size, enc_filters,
-                                                               num_blocks, filter_mult)
+    ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
+                                                           kernel_size, filters,
+                                                           num_blocks, filter_mult)
 
     # Describe model
     maxpool_layer = getattr(KL, f'MaxPooling{ndims}D')
 
     tensor = input = KL.Input(shape=input_shape, name=f'{prefix}_input')
 
-    for i, filters in enumerate(enc_filters, start=1):
+    for i, f in enumerate(filters, start=1):
         tensor = conv_block(tensor,
-                            filters,
+                            f,
                             block_name=f'{prefix}_block{i}',
                             convs_per_block=convs_per_block,
                             activation=activation,
@@ -102,7 +107,7 @@ def conv_encoder(input_shape,
                             residual=residual)
 
         # Pool except in last layer
-        if i < len(enc_filters):
+        if i < len(filters):
             tensor = maxpool_layer(pool_size=pool_size, name=f'{prefix}_pool{i}')(tensor)
 
     output = tensor
@@ -111,7 +116,7 @@ def conv_encoder(input_shape,
 
 
 def conv_decoder(input_shape,
-                 dec_filters,
+                 filters,
                  num_blocks=None,
                  filter_mult=2,
                  convs_per_block=2,
@@ -119,11 +124,13 @@ def conv_decoder(input_shape,
                  residual=False,
                  activation='relu',
                  kernel_size=3,
-                 up_size=2,
-                 skip_connections=False,
-                 input_model=None,
+                 pool_size=2,
                  padding='same',
                  prefix=None,
+                 skip_connections=False,
+                 input_model=None,
+                 output_activation=None,
+                 output_channels=None
                  ):
 
     if prefix is None:
@@ -141,18 +148,21 @@ def conv_decoder(input_shape,
     else:
         tensor = input = KL.Input(shape=input_shape, name=f'{prefix}_input')
 
-    ndims, up_size, kernel_size, dec_filters = _clean_inputs(input_shape, up_size,
-                                                             kernel_size, dec_filters,
-                                                             num_blocks, filter_mult)
-    if len(up_size) == 1:
-        up_size = up_size[0]
+    ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
+                                                           kernel_size, filters,
+                                                           num_blocks, filter_mult)
+    if len(pool_size) == 1:
+        pool_size = pool_size[0]
     # Describe model
     upsample_layer = getattr(KL, f'UpSampling{ndims}D')
 
-    for i, filters in enumerate(reversed(dec_filters), start=1):
-        tensor = upsample_layer(size=up_size, name=f'{prefix}_up{i}')(tensor)
+    for i, f in enumerate(reversed(filters), start=1):
+        tensor = upsample_layer(size=pool_size, name=f'{prefix}_up{i}')(tensor)
+        if skip_connections:
+            # i-1 Due to 1 indexing
+            tensor = KL.concatenate([tensor, shortcuts[i-1]], -1, name=f'{prefix}_merge{i}')
         tensor = conv_block(tensor,
-                            filters,
+                            f,
                             block_name=f'{prefix}_block{i}',
                             convs_per_block=convs_per_block,
                             activation=activation,
@@ -160,10 +170,113 @@ def conv_decoder(input_shape,
                             padding=padding,
                             batch_norm=batch_norm,
                             residual=residual)
-        if skip_connections:
-            # i-1 Due to 1 indexing
-            tensor = KL.concatenate([tensor, shortcuts[i-1]], -1, name=f'{prefix}_merge{i}')
 
     output = tensor
+
+    if output_activation is not None:
+        output = conv_block(output,
+                            output_channels,
+                            block_name=f'{prefix}_output',
+                            convs_per_block=1,
+                            activation=output_activation,
+                            kernel_size=1,
+                            padding=padding,
+                            batch_norm=batch_norm,
+                            residual=False)
+
     model = Model(input, output, prefix)
     return model
+
+
+def conv_autoencoder(input_shape,
+                     enc_kwargs=None,
+                     dec_kwargs=None,
+                     latent_dim=None,
+                     skip_connections=False,
+                     sampling=False,
+                     cond_input=None,
+                     enc_cond=False,
+                     return_parts=False,
+                     prefix=None,
+                     **kwargs,
+                     ):
+
+    if prefix is None:
+        prefix = "conv_auto"
+
+    if latent_dim is None and sampling:
+        raise ValueError("Fully convolutional VAE not supported")
+
+    if latent_dim is None and sampling:
+        raise ValueError("Fully convolutional VAE not supported")
+
+    # Preprocess inputs
+    if enc_kwargs is None:
+        enc_kwargs = {}
+
+    if dec_kwargs is None:
+        dec_kwargs = enc_kwargs
+
+    enc_kwargs.update(kwargs)
+    dec_kwargs.update(kwargs)
+
+    # Define encoder model
+    encoder = conv_encoder(input_shape, prefix=f'{prefix}_enc', **enc_kwargs)
+    input = encoder.input
+    middle = encoder.output
+    # input = KL.Input(shape=input_shape,  name=f'{prefix}_input')
+    # middle = encoder(input)
+    last_shape = middle.shape.as_list()[1:]
+
+    # If latent dimension flatten, dense and then reshape
+    if latent_dim is not None:
+
+        z = KL.Flatten(name=f'{prefix}_enc_flatten')(middle)
+
+        # If sampling, do gauss diag sample
+        if sampling:
+            z_mean = KL.Dense(latent_dim, name=f'{prefix}_enc_mean')(z)
+            z_logvar = KL.Dense(latent_dim, name=f'{prefix}_enc_logvar')(z)
+            z = KL.Lambda(gauss_sample, output_shape=(latent_dim,), name=f'{prefix}_sampling')([z_mean, z_logvar])
+            encoder = Model(input, [z_mean, z_logvar], f'{prefix}_enc')
+        else:
+            z = KL.Dense(latent_dim, name=f'{prefix}_enc_latent')(z)
+            encoder = Model(input, z, f'{prefix}_enc')
+    else:
+        input_dec = middle
+
+    # If we are conditioning on some input, concatenate it
+    if cond_input is not None:
+        # cond_input can be node or shape
+        if isinstance(cond_input, (tuple, list)):
+            cond_input = KL.Input(shape=cond_input, name=f'{prefix}_cond_input')
+
+        z_cond = cond_input
+        # We can apply the same encoder to the input
+        if enc_cond:
+            z_cond = encoder(z_cond)
+        z = KL.concatenate([z, z_cond], -1, name=f'{prefix}_cond_merge')
+        cond_channels = z_cond.shape.as_list()[-1]
+        last_shape = last_shape[:-1] + [last_shape[-1] + cond_channels]
+        input = [input, cond_input]
+
+    if latent_dim is not None:
+        input_dec = KL.Dense(np.prod(last_shape), name=f'{prefix}_dec_resize')(z)
+
+    input_dec = KL.Reshape(last_shape, name=f'{prefix}_dec_reshape')(input_dec)
+    decoder = conv_decoder(last_shape, prefix=f'{prefix}_dec',
+                           skip_connections=skip_connections,
+                           input_model=Model(input, input_dec),
+                           **dec_kwargs)
+
+    if not skip_connections:
+        output = decoder(input_dec)
+    else:
+        output = decoder.output
+
+    autoenc = Model(input, output, prefix)
+
+    if return_parts:
+        return autoenc, encoder, decoder
+    else:
+        return autoenc
