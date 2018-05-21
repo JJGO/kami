@@ -79,12 +79,10 @@ def conv_encoder(input_shape,
                  activation='relu',
                  kernel_size=3,
                  pool_size=2,
+                 pool_freq=1,
                  padding='same',
-                 prefix=None,
+                 prefix="conv_enc",
                  ):
-
-    if prefix is None:
-        prefix = "conv_enc"
 
     ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
                                                            kernel_size, filters,
@@ -107,12 +105,73 @@ def conv_encoder(input_shape,
                             residual=residual)
 
         # Pool except in last layer
-        if i < len(filters):
+        if i < len(filters) and i % pool_freq == 0:
             tensor = maxpool_layer(pool_size=pool_size, name=f'{prefix}_pool{i}')(tensor)
 
     output = tensor
     model = Model(input, output, prefix)
     return model
+
+
+def conv_classifier(input_shape,
+                    n_outputs,
+                    filters,
+                    output_activation=None,
+                    global_avgpool=False,
+                    denses=None,
+                    num_blocks=None,
+                    filter_mult=2,
+                    convs_per_block=2,
+                    batch_norm=True,
+                    residual=False,
+                    activation='relu',
+                    kernel_size=3,
+                    pool_size=2,
+                    pool_freq=1,
+                    padding='same',
+                    prefix="conv_clf",
+                    ):
+
+    if output_activation is None:
+        if n_outputs == 1:
+            output_activation = 'sigmoid'
+        else:
+            output_activation = 'softmax'
+
+    encoder = conv_encoder(input_shape=input_shape,
+                           filters=filters,
+                           num_blocks=num_blocks,
+                           filter_mult=filter_mult,
+                           convs_per_block=convs_per_block,
+                           batch_norm=batch_norm,
+                           residual=residual,
+                           activation=activation,
+                           kernel_size=kernel_size,
+                           pool_size=pool_size,
+                           pool_freq=pool_freq,
+                           prefix=f'{prefix}_enc')
+    input = encoder.input
+    middle = encoder.output
+    if global_avgpool:
+        ndims = len(input_shape) - 1    # We do not average across channels
+        avgpool_layer = getattr(KL, f"AveragePooling{ndims}D")
+        pool_size = middle.shape.as_list()[1:-1]
+        strides = (1,)*ndims
+        middle = avgpool_layer(pool_size=pool_size, strides=strides,
+                               name=f'{prefix}_global_avgpool')(middle)
+
+    middle = KL.Flatten(name=f'{prefix}_output_flatten')(middle)
+    if denses is not None:
+        for i, n_units in enumerate(denses, start=1):
+            middle = KL.Dense(n_units, name=f'{prefix}_output_dense{i}')
+            if batch_norm:
+                middle = KL.BatchNormalization(name=f'{prefix}_output_bn{i}')(middle)
+            middle = KL.Activation(activation, name=f'{prefix}_output_act{i}')(middle)
+
+    output = KL.Dense(n_outputs, name=f'{prefix}_output_dense')(middle)
+    output = KL.Activation(output_activation, name=f'{prefix}_output_act')(output)
+
+    return Model(input, output, prefix)
 
 
 def conv_decoder(input_shape,
@@ -126,15 +185,12 @@ def conv_decoder(input_shape,
                  kernel_size=3,
                  pool_size=2,
                  padding='same',
-                 prefix=None,
                  skip_connections=False,
                  input_model=None,
                  output_activation=None,
-                 output_channels=None
+                 output_channels=None,
+                 prefix="conv_dec",
                  ):
-
-    if prefix is None:
-        prefix = "conv_dec"
 
     if skip_connections:
         input = input_model.input
@@ -197,12 +253,9 @@ def conv_autoencoder(input_shape,
                      cond_input=None,
                      enc_cond=False,
                      return_parts=False,
-                     prefix=None,
+                     prefix="conv_auto",
                      **kwargs,
                      ):
-
-    if prefix is None:
-        prefix = "conv_auto"
 
     if latent_dim is None and sampling:
         raise ValueError("Fully convolutional VAE not supported")
