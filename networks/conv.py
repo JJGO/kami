@@ -83,7 +83,7 @@ def conv_encoder(input_shape,
                  padding='same',
                  prefix="conv_enc",
                  ):
-
+    params = dict(locals())
     ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
                                                            kernel_size, filters,
                                                            num_blocks, filter_mult)
@@ -110,6 +110,7 @@ def conv_encoder(input_shape,
 
     output = tensor
     model = Model(input, output, prefix)
+    model.params = params
     return model
 
 
@@ -131,7 +132,7 @@ def conv_classifier(input_shape,
                     padding='same',
                     prefix="conv_clf",
                     ):
-
+    params = dict(locals())
     if output_activation is None:
         if n_outputs == 1:
             output_activation = 'sigmoid'
@@ -171,7 +172,9 @@ def conv_classifier(input_shape,
     output = KL.Dense(n_outputs, name=f'{prefix}_output_dense')(middle)
     output = KL.Activation(output_activation, name=f'{prefix}_output_act')(output)
 
-    return Model(input, output, prefix)
+    model = Model(input, output, prefix)
+    model.params = params
+    return model
 
 
 def conv_decoder(input_shape,
@@ -191,6 +194,7 @@ def conv_decoder(input_shape,
                  output_channels=None,
                  prefix="conv_dec",
                  ):
+    params = dict(locals())
 
     if skip_connections:
         input = input_model.input
@@ -241,6 +245,7 @@ def conv_decoder(input_shape,
                             residual=False)
 
     model = Model(input, output, prefix)
+    model.params = params
     return model
 
 
@@ -256,6 +261,8 @@ def conv_autoencoder(input_shape,
                      prefix="conv_auto",
                      **kwargs,
                      ):
+
+    params = dict(locals())
 
     if latent_dim is None and sampling:
         raise ValueError("Fully convolutional VAE not supported")
@@ -328,6 +335,7 @@ def conv_autoencoder(input_shape,
         output = decoder.output
 
     autoenc = Model(input, output, prefix)
+    autoenc.params = params
 
     if return_parts:
         return autoenc, encoder, decoder
