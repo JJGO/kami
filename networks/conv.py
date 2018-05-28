@@ -341,3 +341,33 @@ def conv_autoencoder(input_shape,
         return autoenc, encoder, decoder
     else:
         return autoenc
+
+
+def unet(input_shape,
+         filters,
+         num_blocks=None,
+         filter_mult=2,
+         prefix="unet",
+         **kwargs,
+         ):
+    if isinstance(filters, int):
+        if num_blocks is not None:
+            filters = tuple([filters*filter_mult**i for i in range(num_blocks)])
+        else:
+            raise ValueError("For int enc_filters a num_blocks must be provided")
+    dec_filters = filters[:-1]
+
+    enc_kwargs = dict(filters=filters, **kwargs)
+    dec_kwargs = dict(filters=dec_filters, **kwargs)
+
+    model = conv_autoencoder(input_shape,
+                             sampling=False,
+                             latent_dim=None,
+                             skip_connections=True,
+                             cond_input=None,
+                             enc_cond=False,
+                             return_parts=False,
+                             enc_kwargs=enc_kwargs,
+                             dec_kwargs=dec_kwargs,
+                             prefix=prefix)
+    return model
