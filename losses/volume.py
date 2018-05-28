@@ -46,7 +46,7 @@ def soft_dice_coef(y_true, y_pred):
     return dice
 
 
-def dice_coef_loss(y_true, y_pred):
+def soft_dice(y_true, y_pred):
     return 1-K.mean(soft_dice_coef(y_true, y_pred), axis=-1)
 
 
@@ -56,31 +56,31 @@ def dice_coef(y_true, y_pred):
 
 
 @volume_loss
-def mse_loss(y_true, y_pred):
+def mse(y_true, y_pred):
     return K.mean(K.square(y_pred - y_true), axis=-1)
 
 
 @volume_loss
-def mae_loss(y_true, y_pred):
+def mae(y_true, y_pred):
     return K.mean(K.abs(y_pred - y_true), axis=-1)
 
 
 @volume_loss
-def se_loss(y_true, y_pred):
+def se(y_true, y_pred):
     return K.sum(K.square(y_pred - y_true), axis=-1)
 
 
 @volume_loss
-def ae_loss(y_true, y_pred):
+def ae(y_true, y_pred):
     return K.sum(K.abs(y_pred - y_true), axis=-1)
 
 
 @volume_loss
-def L1Norm_loss(y_true, y_pred):
+def L1Norm(y_true, y_pred):
     return K.mean(K.abs(y_pred), axis=-1)
 
 
-def total_variation_loss(_, y_pred):
+def total_variation2d(_, y_pred):
     x = y_pred
     batch_size, img_nrows, img_ncols, img_channels = K.int_shape(x)
     assert K.ndim(x) == 4
