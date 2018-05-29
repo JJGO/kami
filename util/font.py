@@ -5,8 +5,8 @@ from PIL import (Image,
                  ImageDraw,
                  ImageFont)
 
-if os.path.exists('/usr/share/fonts/truetype/dejavu/'):
-    MONOFONT_PATH = '/usr/share/fonts/truetype/dejavu/'
+if os.path.exists('/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf'):
+    MONOFONT_PATH = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf'
 elif os.path.exists('/Users/josejavier/Library/Fonts/DejaVuSansMono.ttf'):
     MONOFONT_PATH = '/Users/josejavier/Library/Fonts/DejaVuSansMono.ttf'
 else:
