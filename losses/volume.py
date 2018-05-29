@@ -1,5 +1,4 @@
 import keras.backend as K
-import numpy as np
 
 __EPS = K.epsilon()
 __THRESHOLD = 0.5
@@ -77,7 +76,7 @@ def ae(y_true, y_pred):
 
 @volume_loss
 def L1Norm(y_true, y_pred):
-    return K.mean(K.abs(y_pred), axis=-1)
+    return K.sum(K.abs(y_pred), axis=-1)
 
 
 def total_variation2d(_, y_pred):
@@ -90,17 +89,3 @@ def total_variation2d(_, y_pred):
     b = K.batch_flatten(b)
     c = K.mean(a, axis=-1) + K.mean(b, axis=-1)
     return c
-
-
-def combined_loss(losses, weights=None):
-
-    if weights is None:
-        weights = np.ones(len(losses))
-
-    def _combined_loss(y_true, y_pred):
-        total_loss = K.constant(0.)
-        for loss, weight in zip(losses, weights):
-            total_loss += K.constant(weight) * loss(y_true, y_pred)
-        return total_loss
-
-    return _combined_loss
