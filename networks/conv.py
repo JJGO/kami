@@ -80,8 +80,10 @@ def conv_encoder(input_shape,
                  kernel_size=3,
                  pool_size=2,
                  pool_freq=1,
+                 last_pool=True,
                  padding='same',
                  prefix="conv_enc",
+                 **kwargs
                  ):
     params = dict(locals())
     ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
@@ -105,8 +107,9 @@ def conv_encoder(input_shape,
                             residual=residual)
 
         # Pool except in last layer
-        if i < len(filters) and i % pool_freq == 0:
-            tensor = maxpool_layer(pool_size=pool_size, name=f'{prefix}_pool{i}')(tensor)
+        if i % pool_freq == 0:
+            if i < len(filters) or last_pool:
+                tensor = maxpool_layer(pool_size=pool_size, name=f'{prefix}_pool{i}')(tensor)
 
     output = tensor
     model = Model(input, output, prefix)
@@ -187,6 +190,7 @@ def conv_decoder(input_shape,
                  activation='relu',
                  kernel_size=3,
                  pool_size=2,
+                 pool_freq=1,
                  padding='same',
                  skip_connections=False,
                  input_model=None,
@@ -217,7 +221,8 @@ def conv_decoder(input_shape,
     upsample_layer = getattr(KL, f'UpSampling{ndims}D')
 
     for i, f in enumerate(reversed(filters), start=1):
-        tensor = upsample_layer(size=pool_size, name=f'{prefix}_up{i}')(tensor)
+        if i % pool_freq == 0:
+            tensor = upsample_layer(size=pool_size, name=f'{prefix}_up{i}')(tensor)
         if skip_connections:
             # i-1 Due to 1 indexing
             tensor = KL.concatenate([tensor, shortcuts[i-1]], -1, name=f'{prefix}_merge{i}')
@@ -357,7 +362,7 @@ def unet(input_shape,
             raise ValueError("For int enc_filters a num_blocks must be provided")
     dec_filters = filters[:-1]
 
-    enc_kwargs = dict(filters=filters, **kwargs)
+    enc_kwargs = dict(filters=filters, last_pool=False, **kwargs)
     dec_kwargs = dict(filters=dec_filters, **kwargs)
 
     model = conv_autoencoder(input_shape,
