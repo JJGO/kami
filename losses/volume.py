@@ -16,12 +16,12 @@ def volume_loss(loss):
 
 
 @volume_loss
-def mean_binary_crossentropy(y_true, y_pred):
+def binary_crossentropy(y_true, y_pred):
     return K.mean(K.binary_crossentropy(y_true, y_pred), axis=-1)
 
 
 @volume_loss
-def binary_crossentropy(y_true, y_pred):
+def sum_binary_crossentropy(y_true, y_pred):
     return K.sum(K.binary_crossentropy(y_true, y_pred), axis=-1)
 
 
