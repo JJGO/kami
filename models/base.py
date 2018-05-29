@@ -36,10 +36,11 @@ class KerasModel:
         self.compiled = False
         self.loss = {}
 
+        self.params = {}
         if isinstance(model, str):
-            model = getattr(networks, model)(**model_kwargs)
-            self.params = model.params
             self.params['model'] = model
+            model = getattr(networks, model)(**model_kwargs)
+            self.params.update(model.params)
         self.model = model
 
         self.hooks = {
