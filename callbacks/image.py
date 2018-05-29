@@ -3,9 +3,10 @@ import subprocess
 
 from scipy.misc import imsave
 import numpy as np
-from font import FontCanvas
 
 from keras.callbacks import Callback
+from ..util.font import print_text
+
 devnull = open(os.devnull, 'w')
 
 
@@ -88,8 +89,7 @@ class TrainTestMosaic(Callback):
                 Y_test_pred = self.predict_fn(self.X_test)
 
             spacer = np.zeros_like(self.Y_train)
-
-            spacer[0] = FontCanvas((self.W, self.H), font_size=0.5, inverse=True).paint(f'{epoch:03d}', '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf')[..., np.newaxis]
+            spacer[0] = print_text(f'{epoch:03d}', self.W, self.H)[..., np.newaxis]
 
             if self.threshold is None:
                 columns = [self.X_train, Y_train_pred, self.Y_train, spacer,
