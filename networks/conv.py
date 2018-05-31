@@ -69,7 +69,7 @@ def _clean_inputs(input_shape, pool_size, kernel_size, filters, num_blocks, filt
     return ndims, pool_size, kernel_size, filters
 
 
-def conv_encoder(input_shape,
+def conv_encoder(input,
                  filters,
                  num_blocks=None,
                  filter_mult=2,
@@ -83,8 +83,16 @@ def conv_encoder(input_shape,
                  last_pool=True,
                  padding='same',
                  prefix="conv_enc",
+                 return_model=True,
                  **kwargs
                  ):
+
+    if isinstance(input, (tuple, list)):
+        input_shape = input
+        input = KL.Input(shape=input_shape, name=f'{prefix}_input')
+    else:
+        input_shape = input.shape.as_list()[1:]
+
     params = dict(locals())
     ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
                                                            kernel_size, filters,
@@ -93,7 +101,7 @@ def conv_encoder(input_shape,
     # Describe model
     maxpool_layer = getattr(KL, f'MaxPooling{ndims}D')
 
-    tensor = input = KL.Input(shape=input_shape, name=f'{prefix}_input')
+    tensor = input
 
     for i, f in enumerate(filters, start=1):
         tensor = conv_block(tensor,
@@ -112,12 +120,15 @@ def conv_encoder(input_shape,
                 tensor = maxpool_layer(pool_size=pool_size, name=f'{prefix}_pool{i}')(tensor)
 
     output = tensor
-    model = Model(input, output, prefix)
-    model.params = params
-    return model
+    if return_model:
+        model = Model(input, output, prefix)
+        model.params = params
+        return model
+    else:
+        return output
 
 
-def conv_classifier(input_shape,
+def conv_classifier(input,
                     n_outputs,
                     filters,
                     output_activation=None,
@@ -142,7 +153,13 @@ def conv_classifier(input_shape,
         else:
             output_activation = 'softmax'
 
-    encoder = conv_encoder(input_shape=input_shape,
+    if isinstance(input, (tuple, list)):
+        input_shape = input
+        input = KL.Input(shape=input_shape, name=f'{prefix}_input')
+    else:
+        input_shape = input.shape.as_list()[1:]
+
+    encoder = conv_encoder(input=input,
                            filters=filters,
                            num_blocks=num_blocks,
                            filter_mult=filter_mult,
@@ -180,7 +197,7 @@ def conv_classifier(input_shape,
     return model
 
 
-def conv_decoder(input_shape,
+def conv_decoder(input,
                  filters,
                  num_blocks=None,
                  filter_mult=2,
@@ -197,8 +214,16 @@ def conv_decoder(input_shape,
                  output_activation=None,
                  output_channels=None,
                  prefix="conv_dec",
+                 return_model=True,
                  ):
+
     params = dict(locals())
+
+    if isinstance(input, (tuple, list)):
+        input_shape = input
+        input = KL.Input(shape=input_shape, name=f'{prefix}_input')
+    else:
+        input_shape = input.shape.as_list()[1:]
 
     if skip_connections:
         input = input_model.input
@@ -210,7 +235,8 @@ def conv_decoder(input_shape,
             pools = sorted(pools, reverse=True, key=lambda x: x.name)
             shortcuts = [p.input for p in pools]
     else:
-        tensor = input = KL.Input(shape=input_shape, name=f'{prefix}_input')
+
+        tensor = input
 
     ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
                                                            kernel_size, filters,
@@ -249,12 +275,15 @@ def conv_decoder(input_shape,
                             batch_norm=batch_norm,
                             residual=False)
 
-    model = Model(input, output, prefix)
-    model.params = params
-    return model
+    if return_model:
+        model = Model(input, output, prefix)
+        model.params = params
+        return model
+    else:
+        return output
 
 
-def conv_autoencoder(input_shape,
+def conv_autoencoder(input,
                      enc_kwargs=None,
                      dec_kwargs=None,
                      latent_dim=None,
@@ -262,10 +291,16 @@ def conv_autoencoder(input_shape,
                      sampling=False,
                      cond_input=None,
                      enc_cond=False,
-                     return_parts=False,
                      prefix="conv_auto",
+                     return_model=True,
                      **kwargs,
                      ):
+
+    if isinstance(input, (tuple, list)):
+        input_shape = input
+        input = KL.Input(shape=input_shape, name=f'{prefix}_input')
+    else:
+        input_shape = input.shape.as_list()[1:]
 
     params = dict(locals())
 
@@ -289,8 +324,6 @@ def conv_autoencoder(input_shape,
     encoder = conv_encoder(input_shape, prefix=f'{prefix}_enc', **enc_kwargs)
     input = encoder.input
     middle = encoder.output
-    # input = KL.Input(shape=input_shape,  name=f'{prefix}_input')
-    # middle = encoder(input)
     last_shape = middle.shape.as_list()[1:]
 
     # If latent dimension flatten, dense and then reshape
@@ -320,6 +353,8 @@ def conv_autoencoder(input_shape,
         # We can apply the same encoder to the input
         if enc_cond:
             z_cond = encoder(z_cond)
+            if sampling:
+                z_cond = z_cond[0]
         z = KL.concatenate([z, z_cond], -1, name=f'{prefix}_cond_merge')
         cond_channels = z_cond.shape.as_list()[-1]
         last_shape = last_shape[:-1] + [last_shape[-1] + cond_channels]
@@ -329,26 +364,21 @@ def conv_autoencoder(input_shape,
         input_dec = KL.Dense(np.prod(last_shape), name=f'{prefix}_dec_resize')(z)
 
     input_dec = KL.Reshape(last_shape, name=f'{prefix}_dec_reshape')(input_dec)
-    decoder = conv_decoder(last_shape, prefix=f'{prefix}_dec',
-                           skip_connections=skip_connections,
-                           input_model=Model(input, input_dec),
-                           **dec_kwargs)
+    output = conv_decoder(input_dec, prefix=f'{prefix}_dec',
+                          skip_connections=skip_connections,
+                          input_model=Model(input, input_dec),
+                          return_model=False,
+                          **dec_kwargs)
 
-    if not skip_connections:
-        output = decoder(input_dec)
-    else:
-        output = decoder.output
-
-    autoenc = Model(input, output, prefix)
-    autoenc.params = params
-
-    if return_parts:
-        return autoenc, encoder, decoder
-    else:
+    if return_model:
+        autoenc = Model(input, output, prefix)
+        autoenc.params = params
         return autoenc
+    else:
+        return output
 
 
-def unet(input_shape,
+def unet(input,
          filters,
          num_blocks=None,
          filter_mult=2,
@@ -365,13 +395,12 @@ def unet(input_shape,
     enc_kwargs = dict(filters=filters, last_pool=False, **kwargs)
     dec_kwargs = dict(filters=dec_filters, **kwargs)
 
-    model = conv_autoencoder(input_shape,
+    model = conv_autoencoder(input,
                              sampling=False,
                              latent_dim=None,
                              skip_connections=True,
                              cond_input=None,
                              enc_cond=False,
-                             return_parts=False,
                              enc_kwargs=enc_kwargs,
                              dec_kwargs=dec_kwargs,
                              prefix=prefix)
