@@ -33,19 +33,22 @@ def retrieve_output(model, search):
 class KerasModel:
 
     def __init__(self, model, **model_kwargs):
-        self.compiled = False
-        self.loss = {}
 
         self.params = {}
         if isinstance(model, str):
             self.params['model'] = model
             model = getattr(networks, model)(**model_kwargs)
-            self.params.update(model.params)
         self.model = model
+        self.__default()
+
+    def __default(self):
+        self.params.update(self.model.params)
+        self.compiled = False
+        self.loss = {}
 
         self.hooks = {
-            "input": model.input,
-            "output": model.output,
+            "input": self.model.input,
+            "output": self.model.output,
         }
 
         self.outputs = ['output']
