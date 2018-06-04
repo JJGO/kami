@@ -39,9 +39,9 @@ class KerasModel:
             self.params['model'] = model
             model = getattr(networks, model)(**model_kwargs)
         self.model = model
-        self.__default()
+        self._default()
 
-    def __default(self):
+    def _default(self):
         self.params.update(self.model.params)
         self.compiled = False
         self.loss = {}
@@ -84,6 +84,8 @@ class KerasModel:
                 save_best_only=True,
                 tensorboard=True,
                 mosaic=False,
+                expand_losses=True,
+                loss_weights=None
                 ):
 
         params = dict(locals())
@@ -98,25 +100,29 @@ class KerasModel:
         elif optim == 'Adam':
             optim = Adam(lr=lr)
 
-        # Losses
-        if isinstance(loss, str):
-            loss = {"output": [(loss, 1)]}
+        if expand_losses:
+            # Losses
+            if isinstance(loss, str):
+                loss = {"output": [(loss, 1)]}
 
-        self.loss.update(loss)
+            self.loss.update(loss)
 
-        flat_losses = [loss for hook in self.loss for loss, _ in self.loss[hook]]
-        flat_losses = [getattr(losses, loss) if isinstance(loss, str) else loss for loss in flat_losses]
-        flat_weights = [weight for hook in self.loss for _, weight in self.loss[hook]]
-        flat_hooks = [hook for hook in self.loss for _ in self.loss[hook]]
-        self.flat_hooks = flat_hooks
-        flat_outputs = [self.hooks[hook] for hook in flat_hooks]
+            flat_losses = [loss for hook in self.loss for loss, _ in self.loss[hook]]
+            flat_losses = [getattr(losses, loss) if isinstance(loss, str) else loss for loss in flat_losses]
+            flat_weights = [weight for hook in self.loss for _, weight in self.loss[hook]]
+            flat_hooks = [hook for hook in self.loss for _ in self.loss[hook]]
+            self.flat_hooks = flat_hooks
+            flat_outputs = [self.hooks[hook] for hook in flat_hooks]
 
-        self.first_output_index = flat_hooks.index('output')
-        if len(flat_outputs) == 1:
-            self.first_output_index = None
+            self.first_output_index = flat_hooks.index('output')
+            if len(flat_outputs) == 1:
+                self.first_output_index = None
 
-        # Model
-        self.model = Model(self.hooks['input'], flat_outputs)
+            # Model
+            self.model = Model(self.hooks['input'], flat_outputs)
+        else:
+            flat_losses = loss
+            flat_weights = loss_weights
 
         if init_weights is not None:
             self.load_weights(init_weights)
@@ -198,8 +204,12 @@ class KerasModel:
                 animation = GenerateAnimation(imgpath)
                 callbacks.extend([mosaic, animation])
 
-        train = self.loss_zipper(data.train_generator)
-        val = self.loss_zipper(data.val_generator)
+        train = data.train_generator
+        val = data.val_generator
+
+        if self.train_params['expand_losses']:
+            train = self.loss_zipper(data.train_generator)
+            val = self.loss_zipper(data.val_generator)
 
         if self.train_params['lookahead']:
             train = LookAhead(train)
