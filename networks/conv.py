@@ -87,13 +87,13 @@ def conv_encoder(input,
                  **kwargs
                  ):
 
+    params = dict(locals())
     if isinstance(input, (tuple, list)):
         input_shape = input
         input = KL.Input(shape=input_shape, name=f'{prefix}_input')
     else:
         input_shape = input.shape.as_list()[1:]
 
-    params = dict(locals())
     ndims, pool_size, kernel_size, filters = _clean_inputs(input_shape, pool_size,
                                                            kernel_size, filters,
                                                            num_blocks, filter_mult)
@@ -296,13 +296,12 @@ def conv_autoencoder(input,
                      **kwargs,
                      ):
 
+    params = dict(locals())
     if isinstance(input, (tuple, list)):
         input_shape = input
         input = KL.Input(shape=input_shape, name=f'{prefix}_input')
     else:
         input_shape = input.shape.as_list()[1:]
-
-    params = dict(locals())
 
     if latent_dim is None and sampling:
         raise ValueError("Fully convolutional VAE not supported")
