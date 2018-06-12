@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+import argparse
+import pathlib
+import os
+import json
+import collections
+from string import Formatter
+
+
+class UnseenFormatter(Formatter):
+    def get_value(self, key, args, kwds):
+        if isinstance(key, str):
+            try:
+                return kwds[key]
+            except KeyError:
+                return ''
+        else:
+            return Formatter.get_value(key, args, kwds)
+
+
+def flatten(d):
+    items = []
+    for k, v in d.items():
+        if isinstance(v, collections.MutableMapping):
+            items.extend(flatten(v).items())
+        else:
+            items.append((k, v))
+    return dict(items)
+
+
+def organize(root_path, *levels, prefix='links', dry_run=False):
+    root_path = pathlib.Path(root_path)
+    if prefix != '':
+        symlink_path = pathlib.Path.cwd() / prefix
+        symlink_path.mkdir(exist_ok=True, parents=True)
+
+    fmt = UnseenFormatter()
+
+    for folder in sorted(root_path.iterdir()):
+        if folder.is_dir() and (folder / 'status.json').is_file():
+            try:
+                with open(folder / 'status.json', 'r') as f:
+                    uuid = json.load(f)['uuid']
+            except KeyError:
+                # Legacy uuid mode
+                uuid = "_".join(folder.stem.split('_')[:2])
+
+            with open(folder / 'hyperparams.json', 'r') as f:
+                params = json.load(f)
+
+            params = flatten(params)
+
+            symlink = ''
+
+            for template in levels:
+                symlink += fmt.format(template, **params) + '/'
+
+            symlink = symlink.replace(' ', '_')
+            symlink = symlink.replace('[', '_')
+            symlink = symlink.replace(']', '_')
+            symlink = symlink.replace("'", '')
+            symlink = symlink.replace(",", '')
+
+            symlink = symlink.strip('/') + f'_{uuid}'
+            symlink = symlink_path / symlink
+
+            print(f'Create: {folder} ->  {symlink}')
+
+            if not dry_run:
+                symlink.parent.mkdir(exist_ok=True, parents=True)
+                os.symlink(folder.absolute(), symlink.absolute())
+
+
+parser = argparse.ArgumentParser(description='Organize result folders')
+parser.add_argument('-r', '--root', dest='root', default='results', help='Root folder')
+parser.add_argument('-p', '--prefix', dest='prefix', default='links', help='Prefix output folder')
+parser.add_argument('-n', '--dry-run', dest='dry_run', action='store_true', default=False, help='Do dry run')
+parser.add_argument('levels', nargs='+', help='Symlink format levels')
+
+
+if __name__ == '__main__':
+    args = parser.parse_args()
+    organize(args.root, *args.levels, prefix=args.prefix, dry_run=args.dry_run)
