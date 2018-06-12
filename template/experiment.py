@@ -63,7 +63,8 @@ class Experiment():
         self.status = {'aborted': False,
                        'failed': False,
                        'commit': commit,
-                       'pid': os.getpid()
+                       'pid': os.getpid(),
+                       'uuid': self.name
                        }
         print(self.hyperparams)
         self.save_json('args', self.args)

@@ -9,6 +9,8 @@ def restrict_GPU_keras(gpuid, memfrac=0, use_cpu=False, **kwargs):
         gpuid: str, comma separated list "0" or "0,1" or even "0,1,3"
         memfrac: float, fraction of memory. By default grows dynamically
     """
+    if isinstance(gpuid, int):
+        gpuid = str(gpuid)
     if not use_cpu:
         if gpuid is not None:
             os.environ["CUDA_VISIBLE_DEVICES"] = gpuid
