@@ -81,11 +81,12 @@ class KerasModel:
                 terminantenan=True,
                 csv_logger=True,
                 checkpoint=True,
-                save_best_only=True,
+                save_best_only=False,
                 tensorboard=True,
                 mosaic=False,
                 expand_losses=True,
-                loss_weights=None
+                loss_weights=None,
+                period=1
                 ):
 
         params = dict(locals())
@@ -134,6 +135,8 @@ class KerasModel:
         self.model.compile(loss=flat_losses, loss_weights=flat_weights, optimizer=optim, metrics=metrics)
         self.compiled = True
 
+        self.callbacks = []
+
         return params
 
     def fit(self, data, path=None):
@@ -145,22 +148,20 @@ class KerasModel:
 
         model = self.model
 
-        callbacks = []
-
         if self.train_params['reducelr']:
             patience = self.train_params['patience']
             min_lr = self.train_params['min_lr']
             reducelr = ReduceLROnPlateau(verbose=1, patience=patience//2, min_lr=min_lr)
-            callbacks.append(reducelr)
+            self.callbacks.append(reducelr)
 
         if self.train_params['earlystop']:
             patience = self.train_params['patience']
             earlystop = EarlyStopping(patience=patience)
-            callbacks.append(earlystop)
+            self.callbacks.append(earlystop)
 
         if self.train_params['terminantenan']:
             terminantenan = TerminateOnNaN()
-            callbacks.append(terminantenan)
+            self.callbacks.append(terminantenan)
 
         if path is not None:
 
@@ -172,28 +173,32 @@ class KerasModel:
                 print(str(model.to_json()), file=f)
 
             if shutil.which("dot") is not None:
-                plot_model(model, to_file=(path/'model.png').as_posix())
+                plot_model(model, to_file=(path/'model.png').as_posix(), show_shapes=True, show_layer_names=True)
 
-            # Output callbacks
+            # Output self.callbacks
 
             if self.train_params['csv_logger']:
                 training_path = path / "training.csv"
                 csv_logger = CSVLogger(training_path)
-                callbacks.append(csv_logger)
+                self.callbacks.append(csv_logger)
 
             if self.train_params['checkpoint']:
-                weight_path = path / "weights-best.hdf5"
+                # weight_path = path / "weights-best.hdf5"
+                weight_path = path / "weights/weights-improvement-{epoch:02d}-{val_loss:.3f}.hdf5"
+                weight_path.parent.mkdir(exist_ok=True)
                 save_best_only = self.train_params['save_best_only']
+                period = self.train_params['period']
                 checkpoint = ModelCheckpoint(weight_path.as_posix(),
                                              monitor='val_loss',
                                              verbose=1,
+                                             period=period,
                                              save_best_only=save_best_only,
                                              mode='min')
-                callbacks.append(checkpoint)
+                self.callbacks.append(checkpoint)
 
             if self.train_params['tensorboard']:
                 tensorboard = TensorBoard(log_dir=(path / 'tblogs').as_posix())
-                callbacks.append(tensorboard)
+                self.callbacks.append(tensorboard)
 
             if self.train_params['mosaic']:
                 imgpath = (path / 'images').as_posix()
@@ -202,7 +207,7 @@ class KerasModel:
 
                 mosaic = TrainTestMosaic(imgpath, X_train, Y_train, X_val, Y_val, frequency=1, inverse=True, index=self.first_output_index)
                 animation = GenerateAnimation(imgpath)
-                callbacks.extend([mosaic, animation])
+                self.callbacks.extend([mosaic, animation])
 
         train = data.train_generator
         val = data.val_generator
@@ -229,7 +234,7 @@ class KerasModel:
         model.fit_generator(train,
                             train_steps_per_epoch,
                             epochs=self.epochs,
-                            callbacks=callbacks,
+                            callbacks=self.callbacks,
                             validation_data=val,
                             validation_steps=val_steps_per_epoch)
 
