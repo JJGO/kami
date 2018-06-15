@@ -25,6 +25,7 @@ parser.add_argument('-T', '--train-file', dest='train_params', type=jsonfile, he
 # GPU params
 parser.add_argument('-r', '--retain', dest='retain', action='store_true', default=False, help='Do no release GPU')
 parser.add_argument('-p', '--path', dest='path', type=str, help='results_path', default=None)
+parser.add_argument('-n', '--name', dest='name', type=str, help='Name for the experiment', default=None)
 parser.add_argument('-g', dest='gpuid', type=str, help='GPU id', default=None)
 parser.add_argument('--mem', dest='memfrac', type=float, help='Fraction of memory', default=0)
 parser.add_argument('--cpu', dest='use_cpu', action='store_true', default=False, help='Use the CPU instead of GPU')
@@ -62,7 +63,8 @@ if __name__ == '__main__':
     ex = Experiment(data_params=data_params,
                     model_params=model_params,
                     train_params=train_params,
-                    path=args.path)
+                    path=args.path,
+                    name=args.name)
 
     ex.run()
 

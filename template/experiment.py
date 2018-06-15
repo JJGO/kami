@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import os
 import pathlib
+import random
 import signal
 import shutil
 import subprocess
@@ -18,7 +19,7 @@ KIRIN_PATH = '/data/ddmg/explog/kirin'
 
 class Experiment():
 
-    def __init__(self, data_params, model_params, train_params, path=None):
+    def __init__(self, data_params, model_params, train_params, path=None, name=None):
 
         self.args = {'model_params': model_params,
                      'data_params': data_params,
@@ -31,7 +32,7 @@ class Experiment():
 
         self.train_params = self.model.compile(**train_params)
 
-        self.name = self.semantic_version()
+        self.name = self.semantic_version(name)
         if path is None:
             path = pathlib.Path.cwd()
         elif not isinstance(path, pathlib.Path):
@@ -41,11 +42,16 @@ class Experiment():
         signal.signal(signal.SIGINT, self.SIGINT_handler)
         signal.signal(signal.SIGQUIT, self.SIGQUIT_handler)
 
-    def semantic_version(self):
-        time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        params = {'time': time, **self.model_params, **self.data_params, **self.train_params}
-        version = '{time}_{model}_{dataset}'.format(**params)
-        return version
+    def semantic_version(self, name):
+        if name is None:
+            time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            nonce = random.randint(0, 2**20)
+            version = f'{time}_{nonce:05x}'
+            # params = {'time': time, **self.model_params, **self.data_params, **self.train_params}
+            # version = '{name}_{model}_{dataset}'.format(**params)
+            return version
+        else:
+            return name
 
     def run(self):
         print(f'\n{color.MAGENTA}Storing results in {self.path}{color.END}\n')
